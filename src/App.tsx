@@ -51,7 +51,7 @@ function isReportsEqual(rep1: ReportData, rep2: ReportData) {
 
 function latLngToString(location: L.LatLng) {
   let promise = new Promise<string>((successFunc, errorFunc) => {
-    axios.get(`https://nominatim.openstreetmap.org/reverse?lat=${location.lat}&lon=${location.lng}&format=json`)
+    axios.get(`https://nominatim.openstreetmap.org/reverse?lat=${location.lat}&lon=${location.lng}&format=json`, { timeout: 9000 })
       .then(function (response) {
         successFunc(response.data['name']);
       })
@@ -65,7 +65,7 @@ function latLngToString(location: L.LatLng) {
 
 function stringToLatLng(strLoc: string): Promise<L.LatLng> {
   let promise = new Promise<L.LatLng>((successFunc, errorFunc) => {
-    axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${strLoc}`)
+    axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${strLoc}`, { timeout: 9000 })
       .then(function (response) {
         console.log(response);
         successFunc(new L.LatLng(+response.data[0]['lat'], +response.data[0]['lon']));
@@ -367,6 +367,7 @@ function AddReport({ closeFunc }: AddReportProps) {
         // const locString = (document.getElementById('report-location') as HTMLInputElement).value;
         //const isRawLatLong = /^\d*(.\d+)?,\s*\d*(.\d+)?$/.test(locString);
         console.log(`TT:: ${isRawLatLong}`);
+        const errorElement = document.getElementById('report-loc-error')!;
         if (!isRawLatLong) {
           stringToLatLng(locString)
             .then(response => {
@@ -374,7 +375,6 @@ function AddReport({ closeFunc }: AddReportProps) {
               closeFunc(reportData);
             })
             .catch(_ => {
-              const errorElement = document.getElementById('report-loc-error')!;
               errorElement.innerText = `Location '${locString}' is invalid!`;
               errorElement.style.display = 'block';
             });

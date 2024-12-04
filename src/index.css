@@ -283,6 +283,12 @@ input[type="submit"] {
   filter: brightness(85%);
 }
 
+#add-report-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .green-colored {
   color: rgb(77, 188, 62);
 }
@@ -293,6 +299,10 @@ input[type="submit"] {
 
 input[type="submit"]:hover {
   cursor: pointer;
+}
+
+.report-remove-style:hover {
+  cursor: auto;
 }
 
 /* input:focus {

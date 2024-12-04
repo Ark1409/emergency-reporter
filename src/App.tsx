@@ -5,6 +5,10 @@ import './index.css'
 import { useState, useEffect } from 'react'
 import L, { LatLng } from 'leaflet'
 import axios from 'axios';
+import { isCorrectPassword } from './password.tsx';
+import closeIcon from './assets/close-icon.png'
+import closeIconWhite from './assets/close-icon-white.png'
+import addIcon from './assets/cross.png'
 
 enum ReportStatus {
   OPEN = "Open",
@@ -37,6 +41,12 @@ type ReportsState = {
   setCurrentReport: React.Dispatch<React.SetStateAction<ReportData | null>>;
   reportLocations: ReportData[];
   setReportLocations: React.Dispatch<React.SetStateAction<ReportData[]>>;
+  oneTimeReport: ReportData | null;
+  setOneTimeReport: React.Dispatch<React.SetStateAction<ReportData | null>>;
+}
+
+function isReportsEqual(rep1: ReportData, rep2: ReportData) {
+  return rep1.location?.lat == rep2.location?.lat && rep1.location?.lng == rep2.location?.lng;
 }
 
 function latLngToString(location: L.LatLng) {
@@ -83,8 +93,10 @@ interface MapPresenterProps extends ReportDataProps {
 const MapContainerRecenterer = ({ reportState }: ReportDataProps) => {
   const map = useMap();
   useEffect(() => {
-    if (reportState.currentReport && reportState.currentReport.location)
-      map.panTo(reportState.currentReport?.location);
+    if (reportState.oneTimeReport && reportState.oneTimeReport.location) {
+      map.panTo(reportState.oneTimeReport.location);
+      reportState.setOneTimeReport(null);
+    }
   });
   return null;
 };
@@ -93,34 +105,43 @@ interface MapMarkerProps extends MapPresenterProps {
   index: number,
   onClick: () => void,
   report: ReportData,
-  currentLoc: L.LatLng
 }
 
-function MapMarker({ report, reportState, index, onClick, currentLoc }: MapMarkerProps) {
-  if (!report.location) return;
-
+function MapMarker({ report, reportState, index, onClick }: MapMarkerProps) {
   const map = useMap();
-  useEffect(() => {
-    console.log('Loc update!!!');
+  const updateLocationsFunc = () => {
+    const el = reportState.reportLocations.find(v => isReportsEqual(v, report));
+    console.log(`is ${JSON.stringify(report)} inside?: ${!!el}`);
     if (map.getBounds().contains(report.location!)) {
-      if (!reportState.reportLocations.find(v => v.location == report.location)) {
+      // console.log(`Report Locations: ${JSON.stringify(reportState.reportLocations)}`);
+      console.log("IM INSIDE!");
+      if (!el) {
         reportState.setReportLocations(oldReports => {
-          oldReports.push(report);
-          return oldReports;
+          const newReps = [...oldReports];
+          newReps.push(report);
+          return newReps;
         });
       }
-      console.log('yup it containes');
     } else {
-      const el = reportState.reportLocations.find(v => v.location == report.location);
+      console.log("IM outside!");
       if (el) {
-        console.log('remove!!!fdas');
         reportState.setReportLocations(oldReports => {
-          oldReports.splice(oldReports.indexOf(el), 1);
-          return oldReports;
+
+          const newReps = [...oldReports];
+          newReps.splice(oldReports.indexOf(el), 1);
+          return newReps;
         });
       }
     }
-  }, [reportState.reportLocations, currentLoc]);
+  };
+  useMapEvents({
+    drag(e) {
+      updateLocationsFunc();
+    },
+    zoom(e) {
+      updateLocationsFunc();
+    },
+  });
 
   return <Marker
     position={report.location!}
@@ -149,10 +170,8 @@ const LocationFinder = ({ setCurrentLoc }: LocationFinderProps) => {
   useMapEvents({
     click(e) {
       setCurrentLoc(e.latlng);
-      console.log(e.latlng);
     },
     drag(_) {
-      console.log(map.getCenter());
       setCurrentLoc(map.getCenter());
     }
   });
@@ -160,8 +179,7 @@ const LocationFinder = ({ setCurrentLoc }: LocationFinderProps) => {
 };
 
 function MapPresenter({ reportState }: MapPresenterProps) {
-  console.log(`new report!!!!: ${reportState.currentReport?.location?.lat}, ${reportState.currentReport?.location?.lng}`);
-  const loc = reportState.currentReport?.location ?? new L.LatLng(51.505, -0.09);
+  const loc = reportState.currentReport?.location ?? new L.LatLng(49.2767096, -122.91780296438841);
   const [isShowPopup, setIsShowPopup] = useState(false);
   const [currentLoc, setCurrentLoc] = useState(loc);
   return (
@@ -173,12 +191,12 @@ function MapPresenter({ reportState }: MapPresenterProps) {
         <LocationFinder setCurrentLoc={setCurrentLoc} />
         {reportState.reports.map((r, index) =>
           <MapMarker key={index} onClick={() => setIsShowPopup(true)}
-            reportState={reportState} report={r} index={index} currentLoc={currentLoc} />
+            reportState={reportState} report={r} index={index} />
         )}
       </MapContainer>
       {isShowPopup &&
         <PopupPane>
-          <ViewReport report={reportState.currentReport!} closeFunc={() => setIsShowPopup(false)} />
+          <ViewReport report={reportState.currentReport!} reportState={reportState} closeFunc={() => setIsShowPopup(false)} />
         </PopupPane>
       }
     </>
@@ -201,9 +219,10 @@ function MapSection({ reportState }: MapSectionProps) {
 type ViewReportProps = {
   closeFunc: () => void;
   report: ReportData;
+  reportState: ReportsState;
 }
 
-function ViewReport({ closeFunc, report }: ViewReportProps) {
+function ViewReport({ closeFunc, report, reportState }: ViewReportProps) {
   useEffect(() => {
     if (report.location == null) {
       let locationElement = document.getElementById('view-report-location');
@@ -216,7 +235,8 @@ function ViewReport({ closeFunc, report }: ViewReportProps) {
         })
         .catch(() => {
           let locationElement = document.getElementById('view-report-location');
-          locationElement!.innerText = '-';
+          console.log(`lng and lat: ${report.location!.lat}, ${report.location!.lng}`)
+          locationElement!.innerText = `${report.location!.lat}, ${report.location!.lng}`;
         });
     }
 
@@ -226,11 +246,15 @@ function ViewReport({ closeFunc, report }: ViewReportProps) {
       let viewImg = document.getElementById('view-report-img');
       viewImg!.style.display = 'none';
     }
-  }, []);
-  useEffect(() => {
-    if(report.status == ReportStatus.OPEN){
-      let viewStatus = document.getElementById('view-report-status');
+
+    if (report.status == ReportStatus.OPEN) {
+      let viewStatus = document.getElementById('view-report-status-text');
+      viewStatus!.classList.remove('red-colored');
       viewStatus!.classList.add('green-colored');
+    } else {
+      let viewStatus = document.getElementById('view-report-status-text');
+      viewStatus!.classList.remove('green-colored');
+      viewStatus!.classList.add('red-colored');
     }
   });
   return (
@@ -250,7 +274,6 @@ function ViewReport({ closeFunc, report }: ViewReportProps) {
             let viewForm = document.getElementById('view-report-form');
             viewForm!.style.marginTop = '10em';
             let target: HTMLElement = e.currentTarget as HTMLElement;
-            console.log('ggghjghjghERRoorRRRR');
             target.style.display = 'none'
           }
         } />
@@ -275,8 +298,32 @@ function ViewReport({ closeFunc, report }: ViewReportProps) {
             </tr>
             <tr>
               <td className="view-report-title">Status: </td>
-              <td id='view-report-status'>{report.status} <input type="button" id='report-status-change' onClick={() => {
-                prompt('Enter the password:');
+              <td id='view-report-status'> <span id='view-report-status-text'>{report.status}</span> <input type="button" id='report-status-change' onClick={() => {
+                let enteredPwd = prompt('Enter the password:');
+                if (enteredPwd == null) {
+                  return;
+                }
+
+                if (isCorrectPassword(enteredPwd)) {
+                  let statusElement = document.getElementById('view-report-status-text')!;
+
+                  if (report.status == ReportStatus.OPEN) {
+                    report.status = ReportStatus.RESOLVED;
+                    statusElement.textContent = 'Resolved';
+                    statusElement!.classList.remove('green-colored');
+                    statusElement!.classList.add('red-colored');
+                  } else {
+                    report.status = ReportStatus.OPEN
+                    statusElement.textContent = 'Open';
+                    statusElement!.classList.remove('red-colored');
+                    statusElement!.classList.add('green-colored');
+                  }
+
+                  localStorage.setItem('reports', JSON.stringify(reportState.reports));
+                } else {
+                  alert('Incorrect password!');
+                }
+
               }} value='Change' /></td>
             </tr>
             <tr>
@@ -299,7 +346,7 @@ type AddReportProps = {
 function AddReport({ closeFunc }: AddReportProps) {
   return (
     <div className='report-container dark-bg' style={{ minWidth: '30%', width: 'fit-content', display: 'flex', flexDirection: 'column' }}>
-      <h3 style={{ fontSize: '40px' }}>Add Report</h3>
+      <h3 id='add-report-' style={{ fontSize: '40px' }}>Add Report</h3>
       <form id="add-report-form" onSubmit={() => {
         let reportComment: string | null = (document.getElementById('report-comments') as HTMLInputElement).value.trim();
         if (reportComment.length == 0) {
@@ -315,8 +362,10 @@ function AddReport({ closeFunc }: AddReportProps) {
           comment: reportComment ?? undefined,
           image: (document.getElementById('report-url') as HTMLInputElement).value
         };
-        const locString = (document.getElementById('report-location') as HTMLInputElement).value;
-        const isRawLatLong = /^\d*(.\d+)?,\s*\d*(.\d+)?$/.test(locString);
+        const locString = (document.getElementById('report-location') as HTMLInputElement).value.trim();
+        const isRawLatLong = /^[-]?((\d*[.]\d+)|(\d+([.]\d*)?))\s*,\s*[-]?((\d*[.]\d+)|(\d+([.]\d*)?))$/.test(locString.trim());
+        // const locString = (document.getElementById('report-location') as HTMLInputElement).value;
+        //const isRawLatLong = /^\d*(.\d+)?,\s*\d*(.\d+)?$/.test(locString);
         console.log(`TT:: ${isRawLatLong}`);
         if (!isRawLatLong) {
           stringToLatLng(locString)
@@ -330,7 +379,7 @@ function AddReport({ closeFunc }: AddReportProps) {
               errorElement.style.display = 'block';
             });
         } else {
-          const nums = locString.split(',').map(s => +s);
+          const nums = locString.split(',').map(s => +s.trim());
           reportData.location = new L.LatLng(nums![0], nums![1]);
           closeFunc(reportData);
         }
@@ -393,30 +442,62 @@ function ReportItem({ report, id, reportState }: ReportItemProps) {
   const [isShowingReportInfo, setIsShowingReportInfo] = useState(false);
   const reportElementId = `report-list-${id}`;
   const date = new Date(report.time);
+  const reportElementBaseText = `${date.toLocaleDateString()} (${getHMS(date)}) | ${report.type}`;
 
   useEffect(() => {
     report.location && latLngToString(report.location!)
       .then((locString) => {
         const reportElement = document.getElementById(reportElementId);
-        reportElement && (reportElement.innerText = `${date.toLocaleDateString()} (${getHMS(date)}) | ${report.type} | ${locString}`);
+        reportElement && (reportElement.innerText = `${reportElementBaseText} | ${locString}`);
       })
       .catch(() => {
         const reportElement = document.getElementById(reportElementId);
-        reportElement && (reportElement.innerText = `${date.toLocaleDateString()} (${getHMS(date)}) | ${report.type} | [${report.location?.lat}, ${report.location?.lng}]`);
+        reportElement && (reportElement.innerText = `${reportElementBaseText} | ${report.type} | [${report.location?.lat}, ${report.location?.lng}]`);
       });
   });
 
   return (
     <>
-      <li className='report-item' id={reportElementId} onClick={() => {
-        setIsShowingReportInfo(true);
-        reportState.setCurrentReport(report);
-      }}>
-        {`${date.toLocaleDateString()} (${getHMS(date)}) | ${report.type}`}
-      </li>
+      <div className='report-item' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+      >
+        <li id={reportElementId} onClick={() => {
+          setIsShowingReportInfo(true);
+          reportState.setCurrentReport(report);
+        }} style={{ flex: '2' }}>
+          {reportElementBaseText}
+        </li>
+        <div style={{ width: 'auto', height: '30px' }} onClick={() => {
+          let enteredPwd = prompt('Enter the password:');
+          if (enteredPwd == null) {
+            return;
+          }
+
+          if (!isCorrectPassword(enteredPwd)) {
+            alert('Incorrect password!');
+            return;
+          }
+
+          reportState.setReports(reps => {
+            const newReps = [...reps];
+            newReps.splice(id, 1);
+            localStorage.setItem('reports', JSON.stringify(newReps));
+            return newReps;
+          });
+          reportState.setReportLocations(oldLocs => {
+            const oldEl = oldLocs.find(v => isReportsEqual(v, report));
+            const newLocs = [...oldLocs];
+            if (oldEl) {
+              newLocs.splice(newLocs.indexOf(oldEl), 1);
+            }
+            return newLocs;
+          })
+        }}>
+          <img src={closeIconWhite} alt='X' style={{ zIndex: '10', width: '100%', height: '100%' }} className='report-remove-style' />
+        </div>
+      </div>
       {isShowingReportInfo &&
         <PopupPane>
-          <ViewReport report={report} closeFunc={() => {
+          <ViewReport report={report} reportState={reportState} closeFunc={() => {
             setIsShowingReportInfo(false);
             // reportState.setCurrentReport(null);
           }} />
@@ -431,27 +512,37 @@ interface ReportListProps extends ReportDataProps {
 
 function ReportList({ reportState }: ReportListProps) {
   const [hasAddReportPopup, setHasAddReportPopup] = useState(false);
-  const [hasViewReportPopup, setHasViewReportPopup] = useState(false);
   const reportElements = reportState.reportLocations.map((e, index) => <ReportItem reportState={reportState} key={index} report={e} id={index} />);
   return (
     <>
       <ul className='dark-container report-list' style={{ maxHeight: '600px', justifyContent: 'flex-start', width: '100%', height: '100%' }}>
         {reportElements}
-        <li key={reportElements.length + 1} className='report-item' onClick={() => setHasAddReportPopup(true)}>
-          Add Report
+        <li id='add-report-item' key={reportElements.length + 1} className='report-item' onClick={() => setHasAddReportPopup(true)}>
+          <div style={{ flex: '2' }}>Add Report</div>
+          <img src={addIcon} alt='+' style={{ width: '30px', height: '30px', padding: '5px' }}></img>
         </li>
       </ul>
 
       {hasAddReportPopup && <PopupPane><AddReport closeFunc={(report) => {
         setHasAddReportPopup(false);
         reportState.setReports((reports) => {
-          reports.push(report);
-          localStorage.setItem('reports', JSON.stringify(reports));
-          return reports;
-        })
-        reportState.setCurrentReport((prevReport) => {
+          const newReports = [...reports];
+          newReports.push(report);
+          localStorage.setItem('reports', JSON.stringify(newReports));
+          return newReports;
+        });
+        reportState.setOneTimeReport((prevReport) => {
           return report;
-        })
+        });
+        reportState.setReportLocations(oldLocs => {
+          const el = reportState.reportLocations.find(v => isReportsEqual(v, report));
+          if (!el) {
+            const newLocs = [...oldLocs];
+            newLocs.push(report);
+            return newLocs;
+          }
+          return oldLocs;
+        });
       }} /></PopupPane>}
     </>
   );
@@ -471,6 +562,7 @@ function LocationsSection({ reportState }: ReportDataProps) {
 function ContentSection() {
   let [reports, setReports] = useState<ReportData[] | null>(null);
   let [reportLocations, setReportLocations] = useState<ReportData[]>([]);
+  let [oneTimeReport, setOneTimeReport] = useState<ReportData | null>(null);
 
   if (!reports) {
     const reportsJson = localStorage.getItem('reports');
@@ -478,6 +570,10 @@ function ContentSection() {
       const dbReports = JSON.parse(reportsJson) as ReportData[];
       reports = dbReports;
       setReports(dbReports);
+      if (dbReports.length > 0) {
+        setOneTimeReport(dbReports[0]);
+        setReportLocations([dbReports[0]]);
+      }
     } else {
       reports = [];
       setReports([]);
@@ -492,7 +588,9 @@ function ContentSection() {
     currentReport,
     setCurrentReport,
     reportLocations,
-    setReportLocations
+    setReportLocations,
+    oneTimeReport,
+    setOneTimeReport
   };
 
   return (

@@ -5,7 +5,7 @@
 ## Features
 
 - **User Reports**: Users can submit emergency reports including their location, type of emergency, and additional details.
-- **Admin Dashboard**: Administrators can view reported emergencies in real-time on a map interface, allowing them to prioritize and manage responses effectively.
+- **Admin Capabilities**: Administrators can view reported emergencies in real-time on a map interface, and can mark them as either resolved or unresolved.
 - **Location Detection**: Emergency reports automatically detect the user's geographical location to streamline the reporting process.
 - **Real-Time Updates**: Both users and admins can receive updates as the status of emergency reports changes.
 - **Responsive UI**: The application is optimized for various devices, ensuring ease of use across desktop and mobile platforms.
